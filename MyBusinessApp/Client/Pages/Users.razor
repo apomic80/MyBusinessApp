@@ -1,0 +1,110 @@
+﻿@page "/users"
+@inject HttpClient httpClient
+
+<h3>Users</h3>
+
+@if (currentUser == null)
+{
+<button class="btn btn-primary" @onclick="() => currentUser = new User()">
+    Create User
+</button>
+
+@if (users != null && users.Count > 0)
+{
+
+<table class="table mt-3">
+    <tr>
+        <th>Id</th>
+        <th>Firstname</th>
+        <th>Lastname</th>
+        <th></th>
+    </tr>
+    @foreach (var user in users)
+    {
+        <tr>
+            <td>@user.Id</td>
+            <td>@user.FirstName</td>
+            <td>@user.LastName</td>
+            <td>
+                <button class="btn btn-warning" @onclick="() => Edit(user)">Edit</button>
+                <button class="btn btn-danger" @onclick="() => Delete(user)">Delete</button>
+            </td>
+        </tr>
+    }
+</table>
+}
+else
+{
+    <p>No users found</p>
+}
+}
+else
+{
+<EditForm Model="currentUser" OnValidSubmit="Save">
+    <DataAnnotationsValidator />
+
+    <div class="form-group">
+        <label>FirstName</label>
+        <InputText @bind-Value="currentUser.FirstName" class="form-control" />
+        <ValidationMessage For="@(() => currentUser.FirstName)" />
+    </div>
+
+    <div class="form-group">
+        <label>LastName</label>
+        <InputText @bind-Value="currentUser.LastName" class="form-control" />
+        <ValidationMessage For="@(() => currentUser.LastName)" />
+    </div>
+
+    <div class="form-group">
+        <label>Description</label>
+        <InputTextArea @bind-Value="currentUser.Description" class="form-control" />
+        <ValidationMessage For="@(() => currentUser.Description)" />
+    </div>
+
+    <button>Save</button>
+    <button @onclick="() => currentUser = null">Cancel</button>
+
+</EditForm>
+}
+
+@code {
+
+    private List<User> users = null;
+    private User currentUser = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await refreshList();
+    }
+
+    private async Task refreshList()
+    {
+        this.users = await httpClient.GetFromJsonAsync<List<User>>("api/users");
+    }
+
+    private async Task Edit(User user)
+    {
+        this.currentUser = await httpClient.GetFromJsonAsync<User>($"api/users/{user.Id}");
+    }
+
+    private async Task Delete(User user)
+    {
+        await httpClient.DeleteAsync($"api/users/{user.Id}");
+        await refreshList();
+    }
+
+    private async Task Save()
+    {
+        if(currentUser.Id == 0)
+        {
+            await httpClient.PostAsJsonAsync("api/users", currentUser);
+        }
+        else
+        {
+            await httpClient.PutAsJsonAsync($"api/users/{currentUser.Id}", currentUser);
+        }
+        await refreshList();
+        currentUser = null;
+    }
+
+}
