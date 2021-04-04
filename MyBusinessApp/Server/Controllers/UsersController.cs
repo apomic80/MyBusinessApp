@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using MyBusinessApp.Server.Data;
 using MyBusinessApp.Shared;
 
@@ -15,10 +18,16 @@ namespace MyBusinessApp.Server.Controllers
     public class UsersController : ControllerBase
     {
         private readonly MyBusinessAppDbContext _context;
+        private readonly BlobContainerClient _blobContainerClient;
 
-        public UsersController(MyBusinessAppDbContext context)
+        public UsersController(
+            MyBusinessAppDbContext context,
+            IConfiguration configuration)
         {
             _context = context;
+            _blobContainerClient = new BlobContainerClient(
+                configuration.GetConnectionString("BlobConnectioString"), 
+                "photos");
         }
 
         // GET: api/Users
@@ -56,6 +65,7 @@ namespace MyBusinessApp.Server.Controllers
 
             try
             {
+                user.Photo = await UploadPhoto(user.Photo, user.PhotoContent);
                 await _context.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
@@ -78,10 +88,20 @@ namespace MyBusinessApp.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
+            user.Photo = await UploadPhoto(user.Photo, user.PhotoContent);
             _context.Users.Add(user);
+            
             await _context.SaveChangesAsync();
 
             return CreatedAtAction("GetUser", new { id = user.Id }, user);
+        }
+
+        private async Task<string> UploadPhoto(string photo, byte[] photoContent)
+        {
+            var blobClient = _blobContainerClient.GetBlobClient(photo);
+            using var photoStream = new MemoryStream(photoContent);
+            await blobClient.UploadAsync(photoStream, true);
+            return blobClient.Uri.ToString();
         }
 
         // DELETE: api/Users/5

@@ -25,7 +25,7 @@ namespace MyBusinessApp.Server
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddDbContext<MyBusinessAppDbContext>(
-                o => o.UseSqlServer(Configuration.GetConnectionString("DefaultConnnection")));
+                o => o.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
 
             services.AddControllersWithViews();
             services.AddRazorPages();

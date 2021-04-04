@@ -17,5 +17,10 @@ namespace MyBusinessApp.Server.Data
         {
 
         }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<User>().Ignore(x => x.PhotoContent);
+        }
     }
 }

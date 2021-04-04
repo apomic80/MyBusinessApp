@@ -15,21 +15,23 @@
 <table class="table mt-3">
     <tr>
         <th>Id</th>
+        <th>Photo</th>
         <th>Firstname</th>
         <th>Lastname</th>
         <th></th>
     </tr>
     @foreach (var user in users)
     {
-        <tr>
-            <td>@user.Id</td>
-            <td>@user.FirstName</td>
-            <td>@user.LastName</td>
-            <td>
-                <button class="btn btn-warning" @onclick="() => Edit(user)">Edit</button>
-                <button class="btn btn-danger" @onclick="() => Delete(user)">Delete</button>
-            </td>
-        </tr>
+<tr>
+    <td>@user.Id</td>
+    <td><img src="@user.Photo" style="width: 100px" /></td>
+    <td>@user.FirstName</td>
+    <td>@user.LastName</td>
+    <td>
+        <button class="btn btn-warning" @onclick="() => Edit(user)">Edit</button>
+        <button class="btn btn-danger" @onclick="() => Delete(user)">Delete</button>
+    </td>
+</tr>
     }
 </table>
 }
@@ -42,6 +44,13 @@ else
 {
 <EditForm Model="currentUser" OnValidSubmit="Save">
     <DataAnnotationsValidator />
+
+    <div class="form-group">
+        <label>Photo</label>
+        <br />
+        <img src="@currentUser.Photo" style="width: 100px" />
+        <InputFile OnChange="LoadPhoto" class="form-control" />
+    </div>
 
     <div class="form-group">
         <label>FirstName</label>
@@ -71,6 +80,7 @@ else
 
     private List<User> users = null;
     private User currentUser = null;
+    private IBrowserFile photo = null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -95,6 +105,13 @@ else
 
     private async Task Save()
     {
+        using var photoStream = photo.OpenReadStream();
+        using var stream = new MemoryStream();
+        await photoStream.CopyToAsync(stream);
+
+        currentUser.Photo = photo.Name;
+        currentUser.PhotoContent = stream.ToArray();
+
         if(currentUser.Id == 0)
         {
             await httpClient.PostAsJsonAsync("api/users", currentUser);
@@ -105,6 +122,11 @@ else
         }
         await refreshList();
         currentUser = null;
+    }
+
+    private void LoadPhoto(InputFileChangeEventArgs e)
+    {
+        photo = e.File;
     }
 
 }

@@ -19,6 +19,11 @@ namespace MyBusinessApp.Shared
         [StringLength(200)] 
         public string LastName { get; set; }
 
+        [StringLength(255)]
+        public string Photo { get; set; }
+
+        public byte[] PhotoContent { get; set; }
+
         [StringLength(500)]
         public string Description { get; set; }
     }
