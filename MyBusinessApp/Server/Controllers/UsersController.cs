@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MyBusinessApp.Server.Data;
@@ -19,6 +21,7 @@ namespace MyBusinessApp.Server.Controllers
     {
         private readonly MyBusinessAppDbContext _context;
         private readonly BlobContainerClient _blobContainerClient;
+        private readonly ComputerVisionClient _computerVisionClient;
 
         public UsersController(
             MyBusinessAppDbContext context,
@@ -26,8 +29,15 @@ namespace MyBusinessApp.Server.Controllers
         {
             _context = context;
             _blobContainerClient = new BlobContainerClient(
-                configuration.GetConnectionString("BlobConnectioString"), 
+                configuration.GetConnectionString("BlobConnectioString"),
                 "photos");
+
+            _computerVisionClient = new ComputerVisionClient(
+                new ApiKeyServiceClientCredentials(
+                    configuration["ComputerVisionKey"]))
+            {
+                Endpoint = configuration["CognitiveServicesEndpoint"]
+            };
         }
 
         // GET: api/Users
@@ -88,12 +98,33 @@ namespace MyBusinessApp.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
+            var valid = await CheckPhoto(user.PhotoContent);
             user.Photo = await UploadPhoto(user.Photo, user.PhotoContent);
             _context.Users.Add(user);
             
             await _context.SaveChangesAsync();
 
             return CreatedAtAction("GetUser", new { id = user.Id }, user);
+        }
+
+        private async Task<bool> CheckPhoto(byte[] photoContent)
+        {
+            using var photoStream = new MemoryStream(photoContent);
+
+            var features = new List<VisualFeatureTypes?>()
+            {
+                VisualFeatureTypes.Categories, VisualFeatureTypes.Description,
+                VisualFeatureTypes.Faces, VisualFeatureTypes.ImageType,
+                VisualFeatureTypes.Tags, VisualFeatureTypes.Adult,
+                VisualFeatureTypes.Color, VisualFeatureTypes.Brands,
+                VisualFeatureTypes.Objects
+            };
+
+            var result = await _computerVisionClient.AnalyzeImageInStreamAsync(
+                photoStream,
+                features);
+
+            return result.Faces != null && result.Faces.Count > 0 ;
         }
 
         private async Task<string> UploadPhoto(string photo, byte[] photoContent)
