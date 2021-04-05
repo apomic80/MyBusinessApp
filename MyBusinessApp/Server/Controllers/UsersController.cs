@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -75,6 +77,8 @@ namespace MyBusinessApp.Server.Controllers
 
             try
             {
+                var imageAnalysis = await AnalyzePhoto(user.PhotoContent);
+                if (imageAnalysis.Faces == null || imageAnalysis.Faces.Count == 0) return BadRequest("Photo not valid!");
                 user.Photo = await UploadPhoto(user.Photo, user.PhotoContent);
                 await _context.SaveChangesAsync();
             }
@@ -98,7 +102,9 @@ namespace MyBusinessApp.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
-            var valid = await CheckPhoto(user.PhotoContent);
+            var imageAnalysis = await AnalyzePhoto(user.PhotoContent);
+            if (imageAnalysis.Faces == null || imageAnalysis.Faces.Count == 0) return BadRequest("Photo not valid!");
+
             user.Photo = await UploadPhoto(user.Photo, user.PhotoContent);
             _context.Users.Add(user);
             
@@ -107,7 +113,88 @@ namespace MyBusinessApp.Server.Controllers
             return CreatedAtAction("GetUser", new { id = user.Id }, user);
         }
 
-        private async Task<bool> CheckPhoto(byte[] photoContent)
+        [HttpPost("extractuserdata")]
+        public async Task<ActionResult<User>> ExtractUserData(byte[] image)
+        {
+            var imageAnalysis = await AnalyzePhoto(image);
+            var userPhoto = ExtractUserPhoto(imageAnalysis, image);
+            var textList = await ExtractText(image);
+
+            var labelFirstName = textList.FirstOrDefault(x => x.Item1.StartsWith("NOME"));
+            var labelLastName = textList.FirstOrDefault(x => x.Item1.StartsWith("COGNOME"));
+
+            var user = new User()
+            {
+                PhotoContent = userPhoto,
+                FirstName = labelFirstName != null ? GetNearestLabel(textList, labelFirstName) : "",
+                LastName = labelLastName != null ? GetNearestLabel(textList, labelLastName) : ""
+            };
+
+            return Ok(user);
+        }
+
+        private async Task<IList<Tuple<string, IList<double>>>> ExtractText(byte[] image)
+        {
+            using var imageStream = new MemoryStream(image);
+            OcrResult result = await _computerVisionClient.RecognizePrintedTextInStreamAsync(true, imageStream);
+
+            IList<Tuple<string, IList<double>>> textList = new List<Tuple<string, IList<double>>>();
+            foreach (var region in result.Regions)
+            {
+                foreach (var line in region.Lines)
+                {
+                    foreach (var word in line.Words)
+                    {
+                        textList.Add( 
+                            new Tuple<string, IList<double>>(
+                                word.Text.Trim().ToUpper(),
+                                word.BoundingBox.Split(",")
+                                    .Select(x => Convert.ToDouble(x)).ToList())
+                        );
+                    }
+                }
+            }
+            return textList;
+        }
+
+        private string GetNearestLabel(IList<Tuple<string, IList<double>>> textList, Tuple<string, IList<double>> label)
+        {
+            return textList.Select(x => new { 
+                    d = Math.Pow(x.Item2[0] - label.Item2[0], 2) + Math.Pow(x.Item2[1] - label.Item2[1], 2),
+                    Text = x.Item1
+                })
+                .Where(x => x.d > 0)
+                .OrderBy(x => x.d)
+                .FirstOrDefault()?.Text;
+        }
+
+        private byte[] ExtractUserPhoto(ImageAnalysis imageAnalysis, byte[] image)
+        {
+            if (imageAnalysis.Objects.Count > 0 && imageAnalysis.Objects[0].ObjectProperty == "person")
+            {
+                var x = imageAnalysis.Objects[0].Rectangle.X;
+                var y = imageAnalysis.Objects[0].Rectangle.Y;
+                var width = imageAnalysis.Objects[0].Rectangle.W;
+                var height = imageAnalysis.Objects[0].Rectangle.H;
+
+                using var imageStream = new MemoryStream(image);
+                Image originalPhoto = Image.FromStream(imageStream, true, true) as Bitmap;
+                Image extractedPhoto = new Bitmap(width, height);
+                
+                using var g = Graphics.FromImage(extractedPhoto);
+                g.DrawImage(originalPhoto,
+                    new Rectangle(0, 0, width, height),
+                    new Rectangle(x, y, width, height),
+                    GraphicsUnit.Pixel);
+
+                using var extractedPhotoStream = new MemoryStream();
+                extractedPhoto.Save(extractedPhotoStream, ImageFormat.Png);
+                return extractedPhotoStream.ToArray();
+            }
+            else return null;
+        }
+
+        private async Task<ImageAnalysis> AnalyzePhoto(byte[] photoContent)
         {
             using var photoStream = new MemoryStream(photoContent);
 
@@ -120,11 +207,9 @@ namespace MyBusinessApp.Server.Controllers
                 VisualFeatureTypes.Objects
             };
 
-            var result = await _computerVisionClient.AnalyzeImageInStreamAsync(
+            return await _computerVisionClient.AnalyzeImageInStreamAsync(
                 photoStream,
                 features);
-
-            return result.Faces != null && result.Faces.Count > 0 ;
         }
 
         private async Task<string> UploadPhoto(string photo, byte[] photoContent)

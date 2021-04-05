@@ -48,8 +48,20 @@ else
     <div class="form-group">
         <label>Photo</label>
         <br />
-        <img src="@currentUser.Photo" style="width: 100px" />
-        <InputFile OnChange="LoadPhoto" class="form-control" />
+        @if (currentUser.PhotoContent != null)
+        {
+            <img style="width: 100px" src="@("data:image/png;base64," + Convert.ToBase64String(currentUser.PhotoContent))" />
+        }
+        else
+        {
+            <img src="@currentUser.Photo" style="width: 100px" />
+        }
+        <div class="input-group">
+            <InputFile OnChange="LoadPhoto" class="form-control" />
+            <div class="input-group-append">
+                <button type="button" class="input-group-text" @onclick="ExtractUserData">Extract Data</button>
+            </div>
+        </div>
     </div>
 
     <div class="form-group">
@@ -92,6 +104,16 @@ else
         this.users = await httpClient.GetFromJsonAsync<List<User>>("api/users");
     }
 
+    private async Task ExtractUserData()
+    {
+        using var photoStream = photo.OpenReadStream();
+        using var stream = new MemoryStream();
+        await photoStream.CopyToAsync(stream);
+
+        var response = await httpClient.PostAsJsonAsync("api/users/extractuserdata", stream.ToArray());
+        this.currentUser = await response.Content.ReadFromJsonAsync<User>();
+    }
+
     private async Task Edit(User user)
     {
         this.currentUser = await httpClient.GetFromJsonAsync<User>($"api/users/{user.Id}");
@@ -105,12 +127,16 @@ else
 
     private async Task Save()
     {
-        using var photoStream = photo.OpenReadStream();
-        using var stream = new MemoryStream();
-        await photoStream.CopyToAsync(stream);
+        if (currentUser.PhotoContent == null)
+        {
+            using var photoStream = photo.OpenReadStream();
+            using var stream = new MemoryStream();
+            await photoStream.CopyToAsync(stream);
 
-        currentUser.Photo = photo.Name;
-        currentUser.PhotoContent = stream.ToArray();
+            currentUser.Photo = photo.Name;
+            currentUser.PhotoContent = stream.ToArray();
+        }
+        else currentUser.Photo = $"{Guid.NewGuid()}.png";
 
         if(currentUser.Id == 0)
         {
